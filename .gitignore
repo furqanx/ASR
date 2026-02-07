@@ -1,2 +1,7 @@
 LICENSE
 setup.cfg
+
+# both this is for local only
+logs/
+data/
+# models/ 
