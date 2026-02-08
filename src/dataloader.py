@@ -190,9 +190,12 @@ class AudioTFDataset:
 
 class AudioPTDataset(Dataset):
     def __init__(self, 
-        file_paths, labels, 
-        preprocess=True, target_duration=3.0, sample_rate=16_000, 
-        feature_extractors=[], background_noise=False, noise_path=None):
+            file_paths, labels, 
+            preprocess=True, target_duration=3.0, sample_rate=16_000, 
+            feature_extractors=[], 
+            background_noise=False, 
+            noise_path=None
+        ):
         self.file_paths = file_paths
         self.labels = labels
         self.preprocess_enabled = preprocess
@@ -222,11 +225,11 @@ class AudioPTDataset(Dataset):
         # 1. Load data
         waveform = load_audio(file_name, backend='pt', target_sr=self.sample_rate)
 
-        if self.preprocess_enabled:
-            # 2. Preprocessing: hilangkan silent
-            waveform = silence_trimming(waveform, backend='pt', top_db=20)
-            # 3. Noise reduction 
-            waveform = reduce_noise(waveform, backend='pt', sample_rate=self.sample_rate)
+        # if self.preprocess_enabled:
+        #     # 2. Preprocessing: hilangkan silent
+        #     waveform = silence_trimming(waveform, backend='pt', top_db=20)
+        #     # 3. Noise reduction 
+        #     waveform = reduce_noise(waveform, backend='pt', sample_rate=self.sample_rate)
 
         if self.background_noise and self.noise_dict:
             # A. Konversi Tensor ke Numpy (karena fungsi add_background_noise pakai numpy)
@@ -287,8 +290,11 @@ class AudioPTDataset(Dataset):
 
         return features, torch.tensor(label).long()
     
-def create_dataset_from_path(data_path, config):
-    """Helper function untuk membuat instance Dataset dari path folder"""
+def create_dataset_from_path(data_path, config, augment=False):
+    """
+    Helper function untuk membuat instance Dataset dari path folder.
+    Param 'augment' menentukan apakah noise injection diaktifkan atau tidak.
+    """
     files = glob(os.path.join(data_path, '**', '*.wav'), recursive=True)
     if not files:
         return None
@@ -299,13 +305,24 @@ def create_dataset_from_path(data_path, config):
     labels = [class_to_idx[os.path.basename(os.path.dirname(f))] for f in files]
     
     feats_to_use = config.get('features', [])
+    
+    # Ambil path noise dari config
+    noise_folder = config.get('background_path', None)
+    
+    # Logika Augmentasi:
+    # Hanya aktifkan jika parameter augment=True DAN folder noise ada di config
+    apply_noise = augment and (noise_folder is not None)
 
     ds = AudioPTDataset(
         file_paths=files, 
         labels=labels, 
         preprocess=True,
         feature_extractors=feats_to_use,
-        target_duration=config.get('max_duration', 3.0)
+        target_duration=config.get('max_duration', 3.0),
+        sample_rate=config.get('sample_rate', 16000),
+        # --- Parameter Augmentasi ---
+        background_noise=apply_noise,  # True hanya untuk train
+        noise_path=noise_folder        # Path ke folder noise
     )
 
     return ds
@@ -315,7 +332,11 @@ def get_dataloader(config):
     num_workers = config.get('num_workers', 2)
 
     # --- 1. SETUP TRAIN LOADER ---
-    train_ds = create_dataset_from_path(config['train_path'], config)
+    train_ds = create_dataset_from_path(
+        config['train_path'], 
+        config,
+        augment=True
+    )
     if train_ds is None:
         raise RuntimeError(f"No audio files found in train path: {config['train_path']}")
 
@@ -331,7 +352,11 @@ def get_dataloader(config):
     # --- 2. SETUP VAL LOADER ---
     val_loader = None
     if config.get('val_path'):
-        val_ds = create_dataset_from_path(config['val_path'], config)
+        val_ds = create_dataset_from_path(
+            config['val_path'], 
+            config,
+            augment=False
+        )
         
         if val_ds is not None:
             val_loader = DataLoader(

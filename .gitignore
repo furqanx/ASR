@@ -5,3 +5,4 @@ setup.cfg
 logs/
 data/
 # models/ 
+debug.py
