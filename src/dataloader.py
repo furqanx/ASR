@@ -17,7 +17,9 @@ from .preprocessing import (
     reduce_noise, 
     normalize_audio, 
     silence_trimming, 
-    segment_audio
+    segment_audio,
+    load_noise_files,
+    add_background_noise
 )
 
 from .utils.sampler import (
@@ -187,13 +189,27 @@ class AudioTFDataset:
         return dataset
 
 class AudioPTDataset(Dataset):
-    def __init__(self, file_paths, labels, preprocess=True, target_duration=3.0, sample_rate=16_000, feature_extractors=[]):
+    def __init__(self, 
+        file_paths, labels, 
+        preprocess=True, target_duration=3.0, sample_rate=16_000, 
+        feature_extractors=[], background_noise=False, noise_path=None):
         self.file_paths = file_paths
         self.labels = labels
         self.preprocess_enabled = preprocess
         self.feature_extractors = feature_extractors
         self.sample_rate = sample_rate
         self.target_duration = target_duration
+        self.background_noise = background_noise
+
+        self.noise_dict = {}
+        if self.background_noise and noise_path:
+            # Load noise sekali saja saat inisialisasi dataset
+            # Agar RAM efisien dan tidak baca harddisk terus menerus
+            print("[Dataset] Loading background noise files...")
+            self.noise_dict = load_noise_files(noise_path, sample_rate=self.sample_rate)
+            
+            if not self.noise_dict:
+                print("[Warning] Background noise diaktifkan tapi folder kosong/tidak ditemukan. Augmentasi akan dilewati.")
 
     def __len__(self):
         return len(self.file_paths)
@@ -207,12 +223,32 @@ class AudioPTDataset(Dataset):
         waveform = load_audio(file_name, backend='pt', target_sr=self.sample_rate)
 
         if self.preprocess_enabled:
-            # 2. Noise reduction 
-            waveform = reduce_noise(waveform, backend='pt', sample_rate=self.sample_rate)
-            # 3. Normalisasi amplitudo ke [-1,1]
-            waveform = normalize_audio(waveform, backend='pt')
-            # 4. Preprocessing: hilangkan silent
+            # 2. Preprocessing: hilangkan silent
             waveform = silence_trimming(waveform, backend='pt', top_db=20)
+            # 3. Noise reduction 
+            waveform = reduce_noise(waveform, backend='pt', sample_rate=self.sample_rate)
+
+        if self.background_noise and self.noise_dict:
+            # A. Konversi Tensor ke Numpy (karena fungsi add_background_noise pakai numpy)
+            wav_numpy = waveform.numpy()
+            # Jika dimensi (1, N), ubah jadi (N,) untuk pemrosesan numpy
+            if wav_numpy.ndim > 1:
+                wav_numpy = wav_numpy.squeeze()
+                
+            # B. Tambahkan Noise
+            # noise_reduction bisa di-randomize juga kalau mau variatif
+            wav_noisy = add_background_noise(wav_numpy, self.noise_dict, noise_reduction=0.5)
+            
+            # C. Kembalikan ke Tensor PyTorch
+            waveform = torch.from_numpy(wav_noisy)
+            
+            # Kembalikan dimensi channel jika hilang (jadi [1, N])
+            if waveform.dim() == 1:
+                waveform = waveform.unsqueeze(0)
+
+        if self.preprocess_enabled:
+            # 4. Normalisasi amplitudo ke [-1,1]
+            waveform = normalize_audio(waveform, backend='pt')
 
         # 5. Standarisasi durasi (proses Segmentasi)
         target_length = int(self.target_duration * self.sample_rate)

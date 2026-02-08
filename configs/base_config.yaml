@@ -10,28 +10,29 @@ experiment:
 
 # --- 2. DATASET ---
 data:
-  train_path   : "data/interim/train"  # Ganti dengan path dataset Anda
-  val_path     : "data/interim/val"    # Ganti dengan path dataset validasi
-  extension    : "wav"                    # Format file audio (wav, flac, mp3)
-  sample_rate  : 16000                    # Standard audio research
+  train_path      : "data/interim/train"  # Ganti dengan path dataset Anda
+  val_path        : "data/interim/val"    # Ganti dengan path dataset validasi
+  background_path : "data/background"
+  extension       : "wav"                    # Format file audio (wav, flac, mp3)
+  sample_rate     : 16000                    # Standard audio research
   # Dataloader Settings
-  batch_size   : 32
-  num_workers  : 2       # Jumlah CPU untuk loading data (di Colab biasa 2)
-  max_duration : 3.0
+  batch_size      : 32
+  num_workers     : 2       # Jumlah CPU untuk loading data (di Colab biasa 2)
+  max_duration    : 3.0
   # SAMPLER CONFIG
-  sampler      : "random"        # PENTING: ArcFace lebih suka Random daripada Balanced
+  sampler         : "random"        # PENTING: ArcFace lebih suka Random daripada Balanced
   # samples_per_class: 4   # (Tidak dipakai jika sampler='random')
   
   # PENTING: Isi ini sesuai jumlah folder speaker di 'data/interim/train'
   # Anda bisa cek pakai len(os.listdir('data/interim/train')) di notebook
-  n_classes    : 32          # Hanya Class Train saja.
+  n_classes       : 32          # Hanya Class Train saja.
 
 # --- 3. MODEL ARCHITECTURE ---
 model:
-  backend      : "pytorch"   # Pilihan: 'pytorch' atau 'tensorflow'
-  name         : "resnetse34l"  # Pilihan: 'resnetse34l', 'resnetse34v2', 'rawnet3', 'vggvox'
-  embedding_dim: 256   # Dimensi vektor output (biasanya 128, 256, 512)
-  encoder_type : "ASP"  # Pooling: 'ASP' (Attentive Stats) atau 'SAP' (Self-Attentive)
+  backend         : "pytorch"   # Pilihan: 'pytorch' atau 'tensorflow'
+  name            : "resnetse34l"  # Pilihan: 'resnetse34l', 'resnetse34v2', 'rawnet3', 'vggvox'
+  embedding_dim   : 256   # Dimensi vektor output (biasanya 128, 256, 512)
+  encoder_type    : "ASP"  # Pooling: 'ASP' (Attentive Stats) atau 'SAP' (Self-Attentive)
 
 # --- 4. LOSS FUNCTION ---
 loss:

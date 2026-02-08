@@ -159,3 +159,99 @@ def apply_pitch_shift(waveform, backend='tf', sample_rate=16000, n_steps=2):
     elif backend == 'pt':
         return torch.from_numpy(shifted_np).float()
     return shifted_np
+
+
+import os
+import numpy as np
+import librosa
+import random
+
+def load_noise_files(noise_folder_path, sample_rate=16000):
+    """
+    Memuat semua file .wav dari folder background noise ke dalam list/dictionary.
+    Dijalankan HANYA SEKALI di awal.
+    """
+    noise_dict = {}
+    
+    # Cek apakah folder ada
+    if not os.path.exists(noise_folder_path):
+        print(f"Error: Folder {noise_folder_path} tidak ditemukan.")
+        return noise_dict
+
+    files = [f for f in os.listdir(noise_folder_path) if f.endswith('.wav')]
+    
+    print(f"Memuat {len(files)} file noise...")
+    
+    for i, filename in enumerate(files):
+        path = os.path.join(noise_folder_path, filename)
+        try:
+            # Load audio, pastikan sample rate sama dengan input audio utama Anda
+            audio, _ = librosa.load(path, sr=sample_rate)
+            # Simpan dengan key index atau nama file (disini kita pakai index agar mudah dirandom)
+            noise_dict[i] = audio 
+            print(f"Loaded: {filename}")
+        except Exception as e:
+            print(f"Gagal memuat {filename}: {e}")
+            
+    return noise_dict
+
+def add_background_noise(data, noise_dict, noise_reduction=0.5):
+    '''
+    data: numpy array audio input (1D array)
+    noise_dict: dictionary berisi numpy array noise (hasil dari load_noise_files)
+    noise_reduction: 0.0 (sangat bising) sampai 1.0 (hening/tidak ada noise tambahan)
+    '''
+    
+    # Jika noise_dict kosong atau noise_reduction 1 (100% reduction), kembalikan data asli
+    if not noise_dict or noise_reduction >= 1.0:
+        return data
+
+    # 1. Pilih satu noise secara acak dari dictionary
+    noise_id = random.choice(list(noise_dict.keys()))
+    noise_data = noise_dict[noise_id]
+    
+    target_len = len(data)
+    noise_len = len(noise_data)
+    
+    # 2. Random Cropping (Potong noise agar durasinya sama dengan input data)
+    if noise_len > target_len:
+        # Jika noise lebih panjang dari data, ambil potongan acak
+        start_idx = np.random.randint(0, noise_len - target_len)
+        noise_segment = noise_data[start_idx : start_idx + target_len]
+    else:
+        # Jika noise lebih pendek (jarang terjadi di dataset ini, tapi buat jaga-jaga)
+        # Kita ulang (tile) noisenya sampai cukup panjang
+        repeats = int(np.ceil(target_len / noise_len))
+        noise_segment = np.tile(noise_data, repeats)[:target_len]
+        
+    # 3. Mixing
+    # Konsep: Input Audio + (Noise * Volume Factor)
+    # (1 - noise_reduction) berarti: jika reduction 0.8, maka volume noise cuma 0.2 (20%)
+    noise_vol = 1.0 - noise_reduction
+    data_with_noise = data + (noise_vol * noise_segment)
+    
+    # Opsional: Clipping agar tidak melebihi range audio float standar (-1.0 sampai 1.0)
+    # data_with_noise = np.clip(data_with_noise, -1.0, 1.0)
+    
+    return data_with_noise.astype(np.float32)
+
+# ==========================================
+# CONTOH PENGGUNAAN
+# ==========================================
+
+# 1. Tentukan path folder sesuai gambar Anda
+# path_to_noise = "LAB-AI/full_speech_commands_extracted/_background_noise_"
+
+# 2. Load noise (Lakukan ini di luar loop training/processing)
+# Pastikan sr (sample rate) sesuai dengan data audio Anda (biasanya 16000 atau 44100)
+# loaded_noises = load_noise_files(path_to_noise, sample_rate=16000)
+
+# 3. Contoh Audio Dummy (Simulasi input suara 1 detik)
+# input_audio = np.random.uniform(-0.5, 0.5, 16000) # array random sepanjang 16000
+
+# 4. Terapkan fungsi di dalam loop atau pipeline data
+# noise_reduction=0.7 berarti noise akan dikecilkan volumenya sebesar 70%
+# augmented_audio = add_background_noise(input_audio, loaded_noises, noise_reduction=0.7)
+
+# print(f"Shape awal: {input_audio.shape}")
+# print(f"Shape akhir: {augmented_audio.shape}")
